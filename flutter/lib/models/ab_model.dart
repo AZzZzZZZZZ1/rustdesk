@@ -387,6 +387,16 @@ class AbModel {
     return res;
   }
 
+  Future<bool> changeServerConfigForPeers(
+      List<String> ids, String? serverConfigId) async {
+    bool res =
+        await current.changeServerConfigForPeers(ids, serverConfigId);
+    await pullNonLegacyAfterChange();
+    currentAbPeers.refresh();
+    _saveCache();
+    return res;
+  }
+
   Future<bool> changePersonalHashPassword(String id, String hash) async {
     var ret = false;
     final personalAb = addressbooks[_personalAddressBookName];
@@ -889,6 +899,9 @@ abstract class BaseAb {
 
   Future<bool> changeSharedPassword(String id, String password);
 
+  Future<bool> changeServerConfigForPeers(
+      List<String> ids, String? serverConfigId);
+
   Future<bool> deletePeers(List<String> ids);
 
   Future<bool> addTags(List<String> tagList, Map<String, int> tagColorMap);
@@ -1097,6 +1110,17 @@ class LegacyAb extends BaseAb {
     peers.map((e) {
       if (ids.contains(e.id)) {
         e.tags = tags;
+      }
+    }).toList();
+    return await pushAb();
+  }
+
+  @override
+  Future<bool> changeServerConfigForPeers(
+      List<String> ids, String? serverConfigId) async {
+    peers.map((e) {
+      if (ids.contains(e.id)) {
+        e.serverConfigId = serverConfigId;
       }
     }).toList();
     return await pushAb();
@@ -1598,6 +1622,37 @@ class Ab extends BaseAb {
     }
   }
 
+  @override
+  Future<bool> changeServerConfigForPeers(
+      List<String> ids, String? serverConfigId) async {
+    try {
+      final api =
+          "${await bind.mainGetApiServer()}/api/ab/peer/update/${profile.guid}";
+      var headers = getHttpHeaders();
+      headers['Content-Type'] = "application/json";
+      for (final id in ids) {
+        final body =
+            jsonEncode({"id": id, "server_config_id": serverConfigId ?? ""});
+        final resp =
+            await http.put(Uri.parse(api), headers: headers, body: body);
+        final errMsg = _jsonDecodeActionResp(resp);
+        if (errMsg.isNotEmpty) {
+          BotToast.showText(contentColor: Colors.red, text: errMsg);
+          return false;
+        }
+      }
+      peers.map((e) {
+        if (ids.contains(e.id)) {
+          e.serverConfigId = serverConfigId;
+        }
+      }).toList();
+      return true;
+    } catch (err) {
+      debugPrint('changeServerConfigForPeers err: ${err.toString()}');
+      return false;
+    }
+  }
+
   Future<bool> _setPassword(Object bodyContent) async {
     try {
       final api =
@@ -1881,6 +1936,12 @@ class DummyAb extends BaseAb {
 
   @override
   Future<bool> changeTagForPeers(List<String> ids, List tags) async {
+    return false;
+  }
+
+  @override
+  Future<bool> changeServerConfigForPeers(
+      List<String> ids, String? serverConfigId) async {
     return false;
   }
 
