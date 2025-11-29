@@ -1,5 +1,5 @@
 import 'dart:convert';
-import 'dart:js_util' as js_util;
+import 'dart:js' as js;
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
@@ -48,7 +48,7 @@ class CursorManager {
 
     final CursorData? cursorData = _cursors[key];
     if (cursorData != null) {
-      js_util.callMethod(js_util.globalThis, 'setByName', [
+      js.context.callMethod('setByName', [
         'cursor',
         jsonEncode({
           'url': cursorData.url,
@@ -61,7 +61,7 @@ class CursorManager {
 
   Future<void> resetSystemCursor() async {
     latestKey = '';
-    js_util.callMethod(js_util.globalThis, 'setByName', ['cursor', 'auto']);
+    js.context.callMethod('setByName', ['cursor', 'auto']);
   }
 }
 
