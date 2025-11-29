@@ -1149,13 +1149,6 @@ class LegacyAb extends BaseAb {
   }
 
   @override
-  Future<bool> changeServerConfigForPeers(
-      List<String> ids, String? serverConfigId) async {
-    // no need to implement
-    return false;
-  }
-
-  @override
   Future<void> syncFromRecent(List<Peer> recents) async {
     bool peerSyncEqual(Peer a, Peer b) {
       return a.hash == b.hash &&
