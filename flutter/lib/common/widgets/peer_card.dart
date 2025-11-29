@@ -762,6 +762,45 @@ abstract class BasePeerCard extends StatelessWidget {
   }
 
   @protected
+  MenuEntryBase<String> _serverTagAction(BuildContext context) {
+    final configs = gFFI.serverModel.serverConfigs;
+    final selected =
+        configs.firstWhereOrNull((c) => c.id == peer.serverConfigId);
+    final label = peer.serverConfigId == null || peer.serverConfigId!.isEmpty
+        ? '不指定'
+        : (selected == null || selected.name.isEmpty
+            ? '未命名配置'
+            : selected.name);
+    final subtleColor =
+        Theme.of(context).textTheme.bodySmall?.color?.withOpacity(0.7);
+    return MenuEntryButton<String>(
+      childBuilder: (TextStyle? style) => Row(
+        children: [
+          Text(
+            '服务器标签',
+            style: style,
+          ),
+          Expanded(
+            child: Align(
+              alignment: Alignment.centerRight,
+              child: Text(
+                label,
+                style: style?.copyWith(color: subtleColor),
+                overflow: TextOverflow.ellipsis,
+              ),
+            ).marginOnly(right: 4),
+          ),
+        ],
+      ),
+      proc: () {
+        _showServerTagDialog(configs);
+      },
+      padding: menuPadding,
+      dismissOnClicked: true,
+    );
+  }
+
+  @protected
   MenuEntryBase<String> _renameAction(String id) {
     return MenuEntryButton<String>(
       childBuilder: (TextStyle? style) => Text(
@@ -808,6 +847,113 @@ abstract class BasePeerCard extends StatelessWidget {
       padding: menuPadding,
       dismissOnClicked: true,
     );
+  }
+
+  void _showServerTagDialog(List<multi.ServerConfig> configs) {
+    final currentId = peer.serverConfigId ?? '';
+    String selectedId = currentId;
+    if (selectedId.isNotEmpty &&
+        !configs.any((element) => element.id == selectedId)) {
+      selectedId = '';
+    }
+    RxBool isInProgress = false.obs;
+
+    gFFI.dialogManager.show((setState, close, dialogContext) {
+      submit() async {
+        isInProgress.value = true;
+        try {
+          final normalizedId =
+              selectedId.isEmpty ? null : selectedId; // empty => not specified
+          if ((peer.serverConfigId ?? '') != (normalizedId ?? '')) {
+            peer.serverConfigId = normalizedId;
+            if (tab == PeerTabIndex.ab) {
+              await gFFI.abModel
+                  .changeServerConfigForPeers([peer.id], normalizedId);
+            }
+            await bind.mainSetPeerOption(
+                id: peer.id,
+                key: 'server_config_id',
+                value: normalizedId ?? '');
+            _update();
+          }
+          showToast(translate('Successful'));
+          close();
+        } finally {
+          isInProgress.value = false;
+        }
+      }
+
+      cancel() {
+        close();
+      }
+
+      final dropdownItems = <DropdownMenuItem<String>>[
+        DropdownMenuItem(value: '', child: Text('不指定')),
+        ...configs.map((c) => DropdownMenuItem(
+            value: c.id,
+            child: Text(c.name.isEmpty ? '未命名配置' : c.name,
+                overflow: TextOverflow.ellipsis))),
+      ];
+
+      final noConfigTips = configs.isEmpty
+          ? Padding(
+              padding: const EdgeInsets.only(top: 8.0),
+              child: Text(
+                '暂无服务器标签，请先在主页添加配置',
+                style: Theme.of(dialogContext)
+                    .textTheme
+                    .bodySmall
+                    ?.copyWith(color: Colors.grey),
+              ),
+            )
+          : const SizedBox.shrink();
+
+      return CustomAlertDialog(
+        title: Row(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Icon(Icons.cloud_rounded, color: MyTheme.accent),
+            Text('服务器标签').paddingOnly(left: 10),
+          ],
+        ),
+        content: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            DropdownButtonFormField<String>(
+              value: selectedId,
+              decoration: const InputDecoration(
+                labelText: '服务器标签',
+                border: OutlineInputBorder(),
+                isDense: true,
+              ),
+              items: dropdownItems,
+              onChanged: (v) {
+                selectedId = v ?? '';
+                setState(() {});
+              },
+            ),
+            noConfigTips,
+            Obx(() =>
+                isInProgress.value ? const LinearProgressIndicator() : Offstage())
+          ],
+        ),
+        actions: [
+          dialogButton(
+            "Cancel",
+            icon: Icon(Icons.close_rounded),
+            onPressed: cancel,
+            isOutline: true,
+          ),
+          dialogButton(
+            "OK",
+            icon: Icon(Icons.done_rounded),
+            onPressed: submit,
+          ),
+        ],
+        onSubmit: submit,
+        onCancel: cancel,
+      );
+    });
   }
 
   @protected
@@ -1034,6 +1180,7 @@ class RecentPeerCard extends BasePeerCard {
     } else {
       menuItems.add(_rmFavAction(peer.id, () async {}));
     }
+    menuItems.add(_serverTagAction(context));
 
     if (gFFI.userModel.userName.isNotEmpty) {
       menuItems.add(_addToAb(peer));
@@ -1094,6 +1241,7 @@ class FavoritePeerCard extends BasePeerCard {
     menuItems.add(_rmFavAction(peer.id, () async {
       await bind.mainLoadFavPeers();
     }));
+    menuItems.add(_serverTagAction(context));
 
     if (gFFI.userModel.userName.isNotEmpty) {
       menuItems.add(_addToAb(peer));
@@ -1153,6 +1301,7 @@ class DiscoveredPeerCard extends BasePeerCard {
     } else {
       menuItems.add(_rmFavAction(peer.id, () async {}));
     }
+    menuItems.add(_serverTagAction(context));
 
     if (gFFI.userModel.userName.isNotEmpty) {
       menuItems.add(_addToAb(peer));
@@ -1208,6 +1357,7 @@ class AddressBookPeerCard extends BasePeerCard {
       if (isMobile || isDesktop || isWebDesktop) {
         menuItems.add(_renameAction(peer.id));
       }
+      menuItems.add(_serverTagAction(context));
       if (gFFI.abModel.current.isPersonal() && peer.hash.isNotEmpty) {
         menuItems.add(_unrememberPasswordAction(peer.id));
       }
