@@ -953,7 +953,7 @@ abstract class BasePeerCard extends StatelessWidget {
         onSubmit: submit,
         onCancel: cancel,
       );
-    });
+    }, forceGlobal: true);
   }
 
   @protected
