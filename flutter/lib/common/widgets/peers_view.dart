@@ -209,7 +209,10 @@ class _PeersViewState extends State<_PeersView>
             ),
           );
         } else {
-          return _buildPeersView(peers);
+          // 需要监听服务器标签筛选变化以刷新过滤结果
+          return Consumer<PeerTabModel>(builder: (_, __, ___) {
+            return _buildPeersView(peers);
+          });
         }
       }),
     );
@@ -364,7 +367,18 @@ class _PeersViewState extends State<_PeersView>
     peers = peers.where((peer) {
       if (selectedServerConfigId != null &&
           selectedServerConfigId.isNotEmpty &&
-          (peer.serverConfigId ?? '') != selectedServerConfigId) {
+          () {
+            // 若 peer 未携带 serverConfigId，则尝试从存储的 peer 选项补全
+            if (peer.serverConfigId == null || peer.serverConfigId!.isEmpty) {
+              final stored = bind.mainGetPeerOptionSync(
+                  id: peer.id, key: 'server_config_id');
+              if (stored.isNotEmpty) {
+                peer.serverConfigId = stored;
+              }
+            }
+            return (peer.serverConfigId ?? '') == selectedServerConfigId;
+          }() ==
+              false) {
         return false;
       }
       if (widget.peerFilter != null && !widget.peerFilter!(peer)) {
