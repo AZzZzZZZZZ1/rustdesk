@@ -2670,7 +2670,15 @@ connect(BuildContext context, String id,
 
 Future<void> _applyServerConfigForPeer(String peerId) async {
   final peer = _findPeerById(peerId);
-  final configId = peer?.serverConfigId;
+  String? configId = peer?.serverConfigId;
+  if ((configId == null || configId.isEmpty) && peer != null) {
+    final stored =
+        bind.mainGetPeerOptionSync(id: peer.id, key: 'server_config_id');
+    if (stored.isNotEmpty) {
+      peer.serverConfigId = stored;
+      configId = stored;
+    }
+  }
   if (configId == null || configId.isEmpty) return;
   final cfg = gFFI.serverModel.findServerConfigById(configId);
   if (cfg == null) return;

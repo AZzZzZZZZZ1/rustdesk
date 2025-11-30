@@ -764,6 +764,13 @@ abstract class BasePeerCard extends StatelessWidget {
   @protected
   MenuEntryBase<String> _serverTagAction(BuildContext context) {
     final configs = gFFI.serverModel.serverConfigs;
+    // 优先使用 Peer 内已有值，缺失则从存储的 peer 选项读取
+    final storedId = peer.serverConfigId?.isNotEmpty == true
+        ? peer.serverConfigId!
+        : bind.mainGetPeerOptionSync(id: peer.id, key: 'server_config_id');
+    if ((peer.serverConfigId ?? '').isEmpty && storedId.isNotEmpty) {
+      peer.serverConfigId = storedId;
+    }
     final selected =
         configs.firstWhereOrNull((c) => c.id == peer.serverConfigId);
     final label = peer.serverConfigId == null || peer.serverConfigId!.isEmpty
@@ -851,7 +858,9 @@ abstract class BasePeerCard extends StatelessWidget {
 
   void _showServerTagDialog(List<multi.ServerConfig> configs) {
     final currentId = peer.serverConfigId ?? '';
-    String selectedId = currentId;
+    String selectedId = currentId.isNotEmpty
+        ? currentId
+        : bind.mainGetPeerOptionSync(id: peer.id, key: 'server_config_id');
     if (selectedId.isNotEmpty &&
         !configs.any((element) => element.id == selectedId)) {
       selectedId = '';
