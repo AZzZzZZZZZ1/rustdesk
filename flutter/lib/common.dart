@@ -2502,19 +2502,17 @@ connectMainDesktop(String id,
 /// If [isViewCamera], starts a session only for view camera.
 /// If [isTcpTunneling], starts a session only for tcp tunneling.
 /// If [isRDP], starts a session only for rdp.
-connect(BuildContext context, String id,
-    {bool isFileTransfer = false,
-    bool isViewCamera = false,
-    bool isTerminal = false,
-    bool isTcpTunneling = false,
-    bool isRDP = false,
-    bool forceRelay = false,
-    String? password,
-    String? connToken,
-    bool? isSharedPassword}) async {
+  connect(BuildContext context, String id,
+      {bool isFileTransfer = false,
+      bool isViewCamera = false,
+      bool isTerminal = false,
+      bool isTcpTunneling = false,
+      bool isRDP = false,
+      bool forceRelay = false,
+      String? password,
+      String? connToken,
+      bool? isSharedPassword}) async {
   if (id == '') return;
-  final rawId = id.replaceAll(' ', '');
-  await _applyServerConfigForPeer(rawId);
   if (!isDesktop || desktopType == DesktopType.main) {
     try {
       if (Get.isRegistered<IDTextEditingController>()) {
@@ -2667,23 +2665,7 @@ connect(BuildContext context, String id,
     currentFocus.unfocus();
   }
 }
-
-Future<void> _applyServerConfigForPeer(String peerId) async {
-  final peer = _findPeerById(peerId);
-  String? configId = peer?.serverConfigId;
-  if ((configId == null || configId.isEmpty) && peer != null) {
-    final stored =
-        bind.mainGetPeerOptionSync(id: peer.id, key: 'server_config_id');
-    if (stored.isNotEmpty) {
-      peer.serverConfigId = stored;
-      configId = stored;
-    }
-  }
-  if (configId == null || configId.isEmpty) return;
-  final cfg = gFFI.serverModel.findServerConfigById(configId);
-  if (cfg == null) return;
-  await _overrideServerOptions(cfg);
-}
+
 
 Peer? _findPeerById(String id) {
   return gFFI.abModel.find(id) ??
@@ -2694,11 +2676,18 @@ Peer? _findPeerById(String id) {
 }
 
 Future<void> _overrideServerOptions(multi.ServerConfig cfg) async {
+  final oldApiServer = await bind.mainGetApiServer();
   await bind.mainSetOption(
       key: 'custom-rendezvous-server', value: cfg.idServer);
   await bind.mainSetOption(key: 'relay-server', value: cfg.relayServer);
   await bind.mainSetOption(key: 'api-server', value: cfg.apiServer);
   await bind.mainSetOption(key: 'key', value: cfg.key);
+  final newApiServer = await bind.mainGetApiServer();
+  if (oldApiServer.isNotEmpty &&
+      oldApiServer != newApiServer &&
+      gFFI.userModel.isLogin) {
+    gFFI.userModel.logOut(apiServer: oldApiServer);
+  }
 }
 
 Map<String, String> getHttpHeaders() {

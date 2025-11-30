@@ -18,6 +18,7 @@ import 'package:flutter_hbb/models/server_model.dart';
 
 import 'package:flutter_hbb/models/peer_tab_model.dart';
 import 'package:flutter_hbb/models/state_model.dart';
+import 'package:flutter_hbb/models/server_config_model.dart' as multi;
 import 'package:flutter_svg/flutter_svg.dart';
 import 'package:get/get.dart';
 import 'package:provider/provider.dart';
@@ -44,6 +45,8 @@ EdgeInsets? _menuPadding() {
 
 class _PeerTabPageState extends State<PeerTabPage>
     with SingleTickerProviderStateMixin {
+  bool _isApplyingServerTag = false;
+
   final List<_TabEntry> entries = [
     _TabEntry(RecentPeersView(
       menuPadding: _menuPadding(),
@@ -141,6 +144,41 @@ class _PeerTabPageState extends State<PeerTabPage>
       value: gFFI.serverModel,
       child: Consumer2<ServerModel, PeerTabModel>(
           builder: (context, serverModel, tabModel, child) {
+        Future<void> applyServerTag(multi.ServerConfig cfg) async {
+          if (_isApplyingServerTag) return;
+          setState(() {
+            _isApplyingServerTag = true;
+          });
+          try {
+            final errMsgs = ['', '', ''].map((e) => e.obs).toList();
+            final ok = await setServerConfig(
+                null,
+                errMsgs,
+                ServerConfig(
+                    idServer: cfg.idServer,
+                    relayServer: cfg.relayServer,
+                    apiServer: cfg.apiServer,
+                    key: cfg.key));
+            if (!ok) {
+              BotToast.showText(
+                  contentColor: Colors.orange,
+                  text: 'Apply server tag failed, switched anyway');
+            }
+          } catch (e) {
+            BotToast.showText(
+                contentColor: Colors.orange,
+                text: 'Apply server tag failed, switched anyway');
+          } finally {
+            if (mounted) {
+              setState(() {
+                _isApplyingServerTag = false;
+              });
+            } else {
+              _isApplyingServerTag = false;
+            }
+          }
+        }
+
         final configs = serverModel.serverConfigs;
         if (configs.isEmpty) return const SizedBox.shrink();
         final selectedId = tabModel.serverConfigFilterId ?? '';
@@ -163,8 +201,13 @@ class _PeerTabPageState extends State<PeerTabPage>
             return ChoiceChip(
               label: Text(name),
               selected: selectedId == cfg.id,
-              onSelected: (v) {
-                tabModel.setServerConfigFilterId(v ? cfg.id : null);
+              onSelected: (v) async {
+                if (v && !_isApplyingServerTag) {
+                  await applyServerTag(cfg);
+                  tabModel.setServerConfigFilterId(cfg.id);
+                } else if (!v) {
+                  tabModel.setServerConfigFilterId(null);
+                }
               },
             );
           }),
