@@ -887,26 +887,15 @@ abstract class BasePeerCard extends StatelessWidget {
         close();
       }
 
-      final dropdownItems = <DropdownMenuItem<String>>[
-        DropdownMenuItem(value: '', child: Text('不指定')),
-        ...configs.map((c) => DropdownMenuItem(
-            value: c.id,
-            child: Text(c.name.isEmpty ? '未命名配置' : c.name,
-                overflow: TextOverflow.ellipsis))),
+      final entries = <Map<String, String>>[
+        {'id': '', 'name': '不指定'},
+        ...configs.map((c) => {
+              'id': c.id,
+              'name': c.name.isEmpty ? '未命名配置' : c.name,
+            })
       ];
-
-      final noConfigTips = configs.isEmpty
-          ? Padding(
-              padding: const EdgeInsets.only(top: 8.0),
-              child: Text(
-                '暂无服务器标签，请先在主页添加配置',
-                style: Theme.of(dialogContext)
-                    .textTheme
-                    .bodySmall
-                    ?.copyWith(color: Colors.grey),
-              ),
-            )
-          : const SizedBox.shrink();
+      final listHeight =
+          (entries.length * 52).clamp(120, 320).toDouble(); // min/max height
 
       return CustomAlertDialog(
         title: Row(
@@ -919,20 +908,47 @@ abstract class BasePeerCard extends StatelessWidget {
         content: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            DropdownButtonFormField<String>(
-              value: selectedId,
-              decoration: const InputDecoration(
-                labelText: '服务器标签',
-                border: OutlineInputBorder(),
-                isDense: true,
+            ConstrainedBox(
+              constraints: BoxConstraints(
+                maxHeight: listHeight,
+                minWidth: 320,
+                maxWidth: 420,
               ),
-              items: dropdownItems,
-              onChanged: (v) {
-                selectedId = v ?? '';
-                setState(() {});
-              },
+              child: ListView.separated(
+                shrinkWrap: true,
+                itemCount: entries.length,
+                separatorBuilder: (_, __) => const Divider(height: 1),
+                itemBuilder: (_, idx) {
+                  final entry = entries[idx];
+                  final id = entry['id'] ?? '';
+                  final name = entry['name'] ?? '';
+                  return RadioListTile<String>(
+                    value: id,
+                    groupValue: selectedId,
+                    onChanged: (v) {
+                      selectedId = v ?? '';
+                      setState(() {});
+                    },
+                    dense: true,
+                    title: Text(
+                      name,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  );
+                },
+              ),
             ),
-            noConfigTips,
+            if (configs.isEmpty)
+              Padding(
+                padding: const EdgeInsets.only(top: 8.0),
+                child: Text(
+                  '暂无服务器标签，请先在主页添加配置',
+                  style: Theme.of(dialogContext)
+                      .textTheme
+                      .bodySmall
+                      ?.copyWith(color: Colors.grey),
+                ),
+              ),
             Obx(() =>
                 isInProgress.value ? const LinearProgressIndicator() : Offstage())
           ],
