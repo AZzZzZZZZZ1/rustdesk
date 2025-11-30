@@ -5,8 +5,10 @@ import 'package:flutter_hbb/common/widgets/dialog.dart';
 import 'package:flutter_hbb/consts.dart';
 import 'package:flutter_hbb/models/peer_tab_model.dart';
 import 'package:flutter_hbb/models/state_model.dart';
+import 'package:flutter_hbb/models/server_config_model.dart' as multi;
 import 'package:get/get.dart';
 import 'package:provider/provider.dart';
+import 'package:collection/collection.dart';
 
 import '../../common.dart';
 import '../../common/formatter/id_formatter.dart';
@@ -512,6 +514,13 @@ abstract class BasePeerCard extends StatelessWidget {
       {required this.peer, required this.tab, this.menuPadding, Key? key})
       : super(key: key);
 
+  Peer? _findPeerById(String id) {
+    return gFFI.abModel.find(id) ??
+        gFFI.recentPeersModel.peers.firstWhereOrNull((e) => e.id == id) ??
+        gFFI.favoritePeersModel.peers.firstWhereOrNull((e) => e.id == id) ??
+        gFFI.lanPeersModel.peers.firstWhereOrNull((e) => e.id == id);
+  }
+
   @override
   Widget build(BuildContext context) {
     return _PeerCard(
@@ -753,6 +762,52 @@ abstract class BasePeerCard extends StatelessWidget {
   }
 
   @protected
+  MenuEntryBase<String> _serverTagAction(BuildContext context) {
+    final configs = gFFI.serverModel.serverConfigs;
+    // 优先使用 Peer 内已有值，缺失则从存储的 peer 选项读取
+    final storedId = peer.serverConfigId?.isNotEmpty == true
+        ? peer.serverConfigId!
+        : bind.mainGetPeerOptionSync(id: peer.id, key: 'server_config_id');
+    if ((peer.serverConfigId ?? '').isEmpty && storedId.isNotEmpty) {
+      peer.serverConfigId = storedId;
+    }
+    final selected =
+        configs.firstWhereOrNull((c) => c.id == peer.serverConfigId);
+    final label = peer.serverConfigId == null || peer.serverConfigId!.isEmpty
+        ? '不指定'
+        : (selected == null || selected.name.isEmpty
+            ? '未命名配置'
+            : selected.name);
+    final subtleColor =
+        Theme.of(context).textTheme.bodySmall?.color?.withOpacity(0.7);
+    return MenuEntryButton<String>(
+      childBuilder: (TextStyle? style) => Row(
+        children: [
+          Text(
+            '服务器标签',
+            style: style,
+          ),
+          Expanded(
+            child: Align(
+              alignment: Alignment.centerRight,
+              child: Text(
+                label,
+                style: style?.copyWith(color: subtleColor),
+                overflow: TextOverflow.ellipsis,
+              ),
+            ).marginOnly(right: 4),
+          ),
+        ],
+      ),
+      proc: () {
+        _showServerTagDialog(configs);
+      },
+      padding: menuPadding,
+      dismissOnClicked: true,
+    );
+  }
+
+  @protected
   MenuEntryBase<String> _renameAction(String id) {
     return MenuEntryButton<String>(
       childBuilder: (TextStyle? style) => Text(
@@ -761,9 +816,18 @@ abstract class BasePeerCard extends StatelessWidget {
       ),
       proc: () async {
         String oldName = await _getAlias(id);
-        renameDialog(
+        final peer = _findPeerById(id);
+        final configs = gFFI.serverModel.serverConfigs;
+        final initialConfigId = peer?.serverConfigId;
+        editPeerInfoDialog(
             oldName: oldName,
-            onSubmit: (String newName) async {
+            initialServerConfigId: initialConfigId,
+            configs: configs,
+            onSubmit: (String newName, String? serverConfigId) async {
+              final normalizedId =
+                  (serverConfigId == null || serverConfigId.isEmpty)
+                      ? null
+                      : serverConfigId;
               if (newName != oldName) {
                 if (tab == PeerTabIndex.ab) {
                   await gFFI.abModel.changeAlias(id: id, alias: newName);
@@ -774,11 +838,147 @@ abstract class BasePeerCard extends StatelessWidget {
                   _update();
                 }
               }
+              if ((peer?.serverConfigId ?? '') != (normalizedId ?? '')) {
+                peer?.serverConfigId = normalizedId;
+                if (tab == PeerTabIndex.ab) {
+                  await gFFI.abModel
+                      .changeServerConfigForPeers([id], normalizedId);
+                }
+                await bind.mainSetPeerOption(
+                    id: id,
+                    key: 'server_config_id',
+                    value: normalizedId ?? '');
+              }
             });
       },
       padding: menuPadding,
       dismissOnClicked: true,
     );
+  }
+
+  void _showServerTagDialog(List<multi.ServerConfig> configs) {
+    final currentId = peer.serverConfigId ?? '';
+    String selectedId = currentId.isNotEmpty
+        ? currentId
+        : bind.mainGetPeerOptionSync(id: peer.id, key: 'server_config_id');
+    if (selectedId.isNotEmpty &&
+        !configs.any((element) => element.id == selectedId)) {
+      selectedId = '';
+    }
+    RxBool isInProgress = false.obs;
+
+    gFFI.dialogManager.show((setState, close, dialogContext) {
+      submit() async {
+        isInProgress.value = true;
+        try {
+          final normalizedId =
+              selectedId.isEmpty ? null : selectedId; // empty => not specified
+          if ((peer.serverConfigId ?? '') != (normalizedId ?? '')) {
+            peer.serverConfigId = normalizedId;
+            if (tab == PeerTabIndex.ab) {
+              await gFFI.abModel
+                  .changeServerConfigForPeers([peer.id], normalizedId);
+            }
+            await bind.mainSetPeerOption(
+                id: peer.id,
+                key: 'server_config_id',
+                value: normalizedId ?? '');
+            _update();
+          }
+          showToast(translate('Successful'));
+          close();
+        } finally {
+          isInProgress.value = false;
+        }
+      }
+
+      cancel() {
+        close();
+      }
+
+      final entries = <Map<String, String>>[
+        {'id': '', 'name': '不指定'},
+        ...configs.map((c) => {
+              'id': c.id,
+              'name': c.name.isEmpty ? '未命名配置' : c.name,
+            })
+      ];
+      final listHeight =
+          (entries.length * 52).clamp(120, 320).toDouble(); // min/max height
+
+      return CustomAlertDialog(
+        title: Row(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Icon(Icons.cloud_rounded, color: MyTheme.accent),
+            Text('服务器标签').paddingOnly(left: 10),
+          ],
+        ),
+        content: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            ConstrainedBox(
+              constraints: BoxConstraints(
+                maxHeight: listHeight,
+                minWidth: 320,
+                maxWidth: 420,
+              ),
+              child: ListView.separated(
+                shrinkWrap: true,
+                itemCount: entries.length,
+                separatorBuilder: (_, __) => const Divider(height: 1),
+                itemBuilder: (_, idx) {
+                  final entry = entries[idx];
+                  final id = entry['id'] ?? '';
+                  final name = entry['name'] ?? '';
+                  return RadioListTile<String>(
+                    value: id,
+                    groupValue: selectedId,
+                    onChanged: (v) {
+                      selectedId = v ?? '';
+                      setState(() {});
+                    },
+                    dense: true,
+                    title: Text(
+                      name,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  );
+                },
+              ),
+            ),
+            if (configs.isEmpty)
+              Padding(
+                padding: const EdgeInsets.only(top: 8.0),
+                child: Text(
+                  '暂无服务器标签，请先在主页添加配置',
+                  style: Theme.of(dialogContext)
+                      .textTheme
+                      .bodySmall
+                      ?.copyWith(color: Colors.grey),
+                ),
+              ),
+            Obx(() =>
+                isInProgress.value ? const LinearProgressIndicator() : Offstage())
+          ],
+        ),
+        actions: [
+          dialogButton(
+            "Cancel",
+            icon: Icon(Icons.close_rounded),
+            onPressed: cancel,
+            isOutline: true,
+          ),
+          dialogButton(
+            "OK",
+            icon: Icon(Icons.done_rounded),
+            onPressed: submit,
+          ),
+        ],
+        onSubmit: submit,
+        onCancel: cancel,
+      );
+    }, forceGlobal: true);
   }
 
   @protected
@@ -1005,6 +1205,7 @@ class RecentPeerCard extends BasePeerCard {
     } else {
       menuItems.add(_rmFavAction(peer.id, () async {}));
     }
+    menuItems.add(_serverTagAction(context));
 
     if (gFFI.userModel.userName.isNotEmpty) {
       menuItems.add(_addToAb(peer));
@@ -1065,6 +1266,7 @@ class FavoritePeerCard extends BasePeerCard {
     menuItems.add(_rmFavAction(peer.id, () async {
       await bind.mainLoadFavPeers();
     }));
+    menuItems.add(_serverTagAction(context));
 
     if (gFFI.userModel.userName.isNotEmpty) {
       menuItems.add(_addToAb(peer));
@@ -1124,6 +1326,7 @@ class DiscoveredPeerCard extends BasePeerCard {
     } else {
       menuItems.add(_rmFavAction(peer.id, () async {}));
     }
+    menuItems.add(_serverTagAction(context));
 
     if (gFFI.userModel.userName.isNotEmpty) {
       menuItems.add(_addToAb(peer));
@@ -1179,6 +1382,7 @@ class AddressBookPeerCard extends BasePeerCard {
       if (isMobile || isDesktop || isWebDesktop) {
         menuItems.add(_renameAction(peer.id));
       }
+      menuItems.add(_serverTagAction(context));
       if (gFFI.abModel.current.isPersonal() && peer.hash.isNotEmpty) {
         menuItems.add(_unrememberPasswordAction(peer.id));
       }

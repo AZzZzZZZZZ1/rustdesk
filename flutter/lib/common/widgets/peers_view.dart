@@ -209,7 +209,10 @@ class _PeersViewState extends State<_PeersView>
             ),
           );
         } else {
-          return _buildPeersView(peers);
+          // 需要监听服务器标签筛选变化以刷新过滤结果
+          return Consumer<PeerTabModel>(builder: (_, __, ___) {
+            return _buildPeersView(peers);
+          });
         }
       }),
     );
@@ -360,9 +363,29 @@ class _PeersViewState extends State<_PeersView>
 
   Future<List<Peer>>? matchPeers(
       String searchText, String sortedBy, List<Peer> peers) async {
-    if (widget.peerFilter != null) {
-      peers = peers.where((peer) => widget.peerFilter!(peer)).toList();
-    }
+    final selectedServerConfigId = gFFI.peerTabModel.serverConfigFilterId;
+    peers = peers.where((peer) {
+      if (selectedServerConfigId != null &&
+          selectedServerConfigId.isNotEmpty &&
+          () {
+            // 若 peer 未携带 serverConfigId，则尝试从存储的 peer 选项补全
+            if (peer.serverConfigId == null || peer.serverConfigId!.isEmpty) {
+              final stored = bind.mainGetPeerOptionSync(
+                  id: peer.id, key: 'server_config_id');
+              if (stored.isNotEmpty) {
+                peer.serverConfigId = stored;
+              }
+            }
+            return (peer.serverConfigId ?? '') == selectedServerConfigId;
+          }() ==
+              false) {
+        return false;
+      }
+      if (widget.peerFilter != null && !widget.peerFilter!(peer)) {
+        return false;
+      }
+      return true;
+    }).toList();
 
     // fallback to id sorting
     if (!PeerSortType.values.contains(sortedBy)) {

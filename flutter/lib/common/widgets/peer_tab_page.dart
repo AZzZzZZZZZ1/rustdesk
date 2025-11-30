@@ -14,9 +14,11 @@ import 'package:flutter_hbb/desktop/widgets/material_mod_popup_menu.dart'
 import 'package:flutter_hbb/desktop/widgets/tabbar_widget.dart';
 import 'package:flutter_hbb/models/ab_model.dart';
 import 'package:flutter_hbb/models/peer_model.dart';
+import 'package:flutter_hbb/models/server_model.dart';
 
 import 'package:flutter_hbb/models/peer_tab_model.dart';
 import 'package:flutter_hbb/models/state_model.dart';
+import 'package:flutter_hbb/models/server_config_model.dart' as multi;
 import 'package:flutter_svg/flutter_svg.dart';
 import 'package:get/get.dart';
 import 'package:provider/provider.dart';
@@ -43,6 +45,8 @@ EdgeInsets? _menuPadding() {
 
 class _PeerTabPageState extends State<PeerTabPage>
     with SingleTickerProviderStateMixin {
+  bool _isApplyingServerTag = false;
+
   final List<_TabEntry> entries = [
     _TabEntry(RecentPeersView(
       menuPadding: _menuPadding(),
@@ -129,8 +133,104 @@ class _PeerTabPageState extends State<PeerTabPage>
                 )),
               ),
             ).paddingOnly(right: stateGlobal.isPortrait.isTrue ? 0 : 12)),
+        _buildServerTagFilter(context),
         _createPeersView(),
       ],
+    );
+  }
+
+  Widget _buildServerTagFilter(BuildContext context) {
+    return ChangeNotifierProvider.value(
+      value: gFFI.serverModel,
+      child: Consumer2<ServerModel, PeerTabModel>(
+          builder: (context, serverModel, tabModel, child) {
+        Future<void> applyServerTag(multi.ServerConfig cfg) async {
+          if (_isApplyingServerTag) return;
+          setState(() {
+            _isApplyingServerTag = true;
+          });
+          try {
+            final errMsgs = ['', '', ''].map((e) => e.obs).toList();
+            final ok = await setServerConfig(
+                null,
+                errMsgs,
+                ServerConfig(
+                    idServer: cfg.idServer,
+                    relayServer: cfg.relayServer,
+                    apiServer: cfg.apiServer,
+                    key: cfg.key));
+            if (!ok) {
+              BotToast.showText(
+                  contentColor: Colors.orange,
+                  text: 'Apply server tag failed, switched anyway');
+            }
+          } catch (e) {
+            BotToast.showText(
+                contentColor: Colors.orange,
+                text: 'Apply server tag failed, switched anyway');
+          } finally {
+            if (mounted) {
+              setState(() {
+                _isApplyingServerTag = false;
+              });
+            } else {
+              _isApplyingServerTag = false;
+            }
+          }
+        }
+
+        final configs = serverModel.serverConfigs;
+        if (configs.isEmpty) return const SizedBox.shrink();
+        final selectedId = tabModel.serverConfigFilterId ?? '';
+        if (selectedId.isNotEmpty &&
+            !configs.any((element) => element.id == selectedId)) {
+          WidgetsBinding.instance.addPostFrameCallback((_) {
+            tabModel.setServerConfigFilterId(null);
+          });
+        }
+        final chips = <Widget>[
+          ChoiceChip(
+            label: Text('全部'),
+            selected: selectedId.isEmpty,
+            onSelected: (v) {
+              if (v) tabModel.setServerConfigFilterId(null);
+            },
+          ),
+          ...configs.map((cfg) {
+            final name = cfg.name.isEmpty ? '未命名配置' : cfg.name;
+            return ChoiceChip(
+              label: Text(name),
+              selected: selectedId == cfg.id,
+              onSelected: (v) async {
+                if (v && !_isApplyingServerTag) {
+                  await applyServerTag(cfg);
+                  tabModel.setServerConfigFilterId(cfg.id);
+                } else if (!v) {
+                  tabModel.setServerConfigFilterId(null);
+                }
+              },
+            );
+          }),
+        ];
+        return Padding(
+          padding: const EdgeInsets.only(left: 4, right: 12, bottom: 6, top: 4),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                '服务器标签',
+                style: Theme.of(context).textTheme.bodySmall,
+              ),
+              const SizedBox(height: 6),
+              Wrap(
+                spacing: 8,
+                runSpacing: 8,
+                children: chips,
+              ),
+            ],
+          ),
+        );
+      }),
     );
   }
 
